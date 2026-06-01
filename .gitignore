@@ -1,0 +1,18 @@
+# Python 字节码缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# pytest 缓存
+.pytest_cache/
+
+# 测试报告（由 CI 生成，本地不需要）
+*.xml
+*.csv
+
+# 其他 Python 项目常见忽略
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
