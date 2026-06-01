@@ -7,6 +7,7 @@ import marshal
 import io
 import sys
 import platform
+import struct
 
 
 def test_hello_world():
@@ -65,13 +66,8 @@ def test_marshal_determinism():
     assert h1 == h2, "相同输入产生了不同的 marshal 输出！"
 
 
-# 导入 struct（test_environment_info 中使用）
-import struct
-
-
 def test_marshal_platform_specific():
     """测试平台相关特性——输出平台标识"""
-    import struct
 
     print(f"\n  --- 平台特定信息 ---")
     print(f"  字节序: {'大端' if sys.byteorder == 'big' else '小端'}")
