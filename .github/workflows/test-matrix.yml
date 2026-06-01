@@ -27,6 +27,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
 
       - name: 显示环境信息
         run: |
@@ -34,14 +40,14 @@ jobs:
           python -c "import sys,platform; print(sys.version); print(platform.system(), platform.release())"
 
       - name: 运行 pytest 测试套件
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
 
       - name: 上传测试报告
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: .pytest_cache/  # 仅示例，实际可替换为正式报告
+          path: test-results/
 
   # ============================================================
   # Job 2: 验证 marshal 字节流在不同平台间的哈希一致性
