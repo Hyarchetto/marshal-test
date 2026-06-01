@@ -7,6 +7,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+env:
+  PYTHONIOENCODING: utf-8
+
 jobs:
   # ============================================================
   # Job 1: 测试矩阵 — 覆盖 操作系统 × Python 版本
