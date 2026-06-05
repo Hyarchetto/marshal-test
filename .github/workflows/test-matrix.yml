@@ -60,10 +60,14 @@ jobs:
         run: python -m pytest tests/ -v -s --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
                   # Step 5：跑 tests/ 下所有 test_*.py 文件
 
+      - name: 生成 JSON 结构化报告
+        run: python tests/test_marshal.py
+                  # Step 6：调用 _run_with_report() 输出 JSON 到 test-results/
+
       - name: 上传测试报告
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.os }}-py${{ matrix.python-version }}
           path: test-results/
-                  # Step 6：把测试报告保存到 GitHub 网页端
+                  # Step 7：把测试报告保存到 GitHub 网页端
