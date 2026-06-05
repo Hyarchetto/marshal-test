@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 
 # 测试报告（由 CI 生成，本地不需要）
+test-results/
 *.xml
 *.csv
 
@@ -16,3 +17,4 @@ dist/
 build/
 .eggs/
 *.egg
+*.rar
