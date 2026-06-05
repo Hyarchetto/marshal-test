@@ -30,15 +30,37 @@ def main():
     # 收集所有控制台日志（.txt 文件）
     txt_files = glob.glob(os.path.join(REPORT_DIR, "**", "marshal_report_py*.txt"), recursive=True)
     console_logs = {}
+    merged_lines = []
     for txt_path in sorted(txt_files):
-        basename = os.path.basename(txt_path).replace("marshal_report_py", "").replace(".txt", "")
+        # 从目录名推断环境标识（如 report-ubuntu-latest-py3.10 → Ubuntu Py3.10）
+        parent_dir = os.path.basename(os.path.dirname(txt_path))
+        if parent_dir.startswith("report-"):
+            env_tag = parent_dir.replace("report-", "").replace("-latest", "").replace("-", " ")
+        else:
+            env_tag = os.path.basename(txt_path).replace("marshal_report_py", "").replace(".txt", "")
+
         with open(txt_path, encoding="utf-8", errors="replace") as f:
-            console_logs[basename] = f.read()
-        # 同时复制一份独立 .txt 到输出目录
+            content = f.read()
+            console_logs[env_tag] = content
+
+        # 复制独立 .txt 到输出目录
         dst = os.path.join(OUTPUT_DIR, os.path.basename(txt_path))
-        with open(txt_path, encoding="utf-8", errors="replace") as f_in:
-            with open(dst, "w", encoding="utf-8") as f_out:
-                f_out.write(f_in.read())
+        with open(dst, "w", encoding="utf-8") as f_out:
+            f_out.write(content)
+
+        # 积累合并日志
+        merged_lines.append(f"{'='*70}")
+        merged_lines.append(f"  环境: {env_tag}")
+        merged_lines.append(f"{'='*70}")
+        merged_lines.append(content.rstrip())
+        merged_lines.append("")
+
+    # 写入合并日志文件
+    if merged_lines:
+        merged_path = os.path.join(OUTPUT_DIR, "combined_console_logs.txt")
+        with open(merged_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(merged_lines))
+        print(f"   合并日志: {merged_path}")
 
     # ================================================================
     # 1. 环境元数据 & 基本汇总
