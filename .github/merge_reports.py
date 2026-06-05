@@ -34,6 +34,11 @@ def main():
         basename = os.path.basename(txt_path).replace("marshal_report_py", "").replace(".txt", "")
         with open(txt_path, encoding="utf-8", errors="replace") as f:
             console_logs[basename] = f.read()
+        # 同时复制一份独立 .txt 到输出目录
+        dst = os.path.join(OUTPUT_DIR, os.path.basename(txt_path))
+        with open(txt_path, encoding="utf-8", errors="replace") as f_in:
+            with open(dst, "w", encoding="utf-8") as f_out:
+                f_out.write(f_in.read())
 
     # ================================================================
     # 1. 环境元数据 & 基本汇总
