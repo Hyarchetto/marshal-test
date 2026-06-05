@@ -61,10 +61,11 @@ jobs:
                   # Step 5：跑 tests/ 下所有 test_*.py 文件
 
       - name: 生成 JSON 结构化报告
+        shell: bash
         run: |
-          python tests/test_marshal.py
-          mv marshal_report_py*.json test-results/
-                  # Step 6：调用 _run_with_report() 输出 JSON 到 test-results/
+          python tests/test_marshal.py 2>&1 | tee marshal_report_py$(echo "${{ matrix.python-version }}" | tr -d '.').txt
+          mv marshal_report_py*.json marshal_report_py*.txt test-results/
+                  # Step 6：调用 _run_with_report() 输出 JSON + print 日志到 test-results/
 
       - name: 上传测试报告
         if: always()

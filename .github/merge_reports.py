@@ -27,6 +27,14 @@ def main():
             data = json.load(f)
             all_reports.append(data)
 
+    # 收集所有控制台日志（.txt 文件）
+    txt_files = glob.glob(os.path.join(REPORT_DIR, "**", "marshal_report_py*.txt"), recursive=True)
+    console_logs = {}
+    for txt_path in sorted(txt_files):
+        basename = os.path.basename(txt_path).replace("marshal_report_py", "").replace(".txt", "")
+        with open(txt_path, encoding="utf-8", errors="replace") as f:
+            console_logs[basename] = f.read()
+
     # ================================================================
     # 1. 环境元数据 & 基本汇总
     # ================================================================
@@ -89,6 +97,7 @@ def main():
             "summary": combined_summary,
             "static_cross_environment_comparison": static_comparison,
             "fuzzer_cross_environment_comparison": fuzzer_comparison,
+            "console_logs": console_logs,
             "raw_environments": raw_data,
         },
     }
@@ -102,6 +111,7 @@ def main():
     fuzzer_total = fuzzer_comparison.get("total_iterations", 0)
     print(f"   静态用例: {static_total} 个 × {len(all_reports)} 环境 = {static_total * len(all_reports)} 条")
     print(f"   模糊测试: {fuzzer_total} 轮 × {len(all_reports)} 环境 = {fuzzer_total * len(all_reports)} 条")
+    print(f"   控制台日志: {len(console_logs)} 份")
     print(f"   原始数据: {len(raw_data)} 份完整报告（已包含在上述对比中）")
 
 
