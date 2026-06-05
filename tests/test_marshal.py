@@ -22,7 +22,8 @@ import random
 import platform
 
 #---全局约束配置---
-BASELINE_VERSION = "3.10"
+BASELINE_VERSION = "3.10"       # 基准哈希采集时的 Python 版本
+BASELINE_OS = "Windows"         # 基准哈希采集时的操作系统（Windows 本地采集）
 GLOBAL_SEED = 42
 FUZZER_ITERATIONS = 50  # 模糊测试迭代次数
 
@@ -357,18 +358,20 @@ def run_comparison(case_name, test_data, baseline_hash, current_version, skip_as
     Args:
         case_name: 用例标识
         test_data: 测试对象
-        baseline_hash: 3.10 基准哈希（或 None 表示无基准）
+        baseline_hash: 基准哈希（或 None 表示无基准）
         current_version: 当前 Python 版本字符串
         skip_assert: 是否跳过断言（用于不确定性用例）
     """
     try:
         current_hash = _compute_hash(test_data)
+        current_os = platform.system()
+        same_env = (current_version == BASELINE_VERSION and current_os == BASELINE_OS)
 
-        if current_version == BASELINE_VERSION:
-            # 基础断言: 保障跨系统架构独立性
+        if same_env:
+            # 同版本 + 同操作系统 → 严格校验序列化确定性
             if baseline_hash and not skip_assert:
                 assert current_hash == baseline_hash, (
-                    f"[{case_name}] 跨平台一致性异常: "
+                    f"[{case_name}] 同环境确定性异常: "
                     f"current={current_hash}, baseline={baseline_hash}"
                 )
             elif baseline_hash and skip_assert:
@@ -379,15 +382,28 @@ def run_comparison(case_name, test_data, baseline_hash, current_version, skip_as
                     print(f"[静态探测] {case_name} | 格式维持兼容")
             else:
                 print(f"[无基准] {case_name} | hash={current_hash}")
-        else:
-            # 差异探索: 探测跨版本的序列化变化
+
+        elif current_version == BASELINE_VERSION and current_os != BASELINE_OS:
+            # 同版本 + 不同操作系统 → 跨平台变化探测
             if baseline_hash:
                 if current_hash != baseline_hash:
-                    print(f"[变化探测] {case_name} | {BASELINE_VERSION} -> {current_version} 格式发生重构")
+                    print(f"[跨平台变化] {case_name} | {BASELINE_OS} -> {current_os} 格式发生重构")
+                    print(f"           基准({BASELINE_OS}): {baseline_hash}")
+                    print(f"           当前({current_os}): {current_hash}")
+                else:
+                    print(f"[跨平台兼容] {case_name} | {BASELINE_OS} <-> {current_os} 格式保持一致")
+            else:
+                print(f"[无基准] {case_name} | {current_os} hash={current_hash}")
+
+        else:
+            # 不同 Python 版本 → 跨版本变化探测
+            if baseline_hash:
+                if current_hash != baseline_hash:
+                    print(f"[版本变化] {case_name} | {BASELINE_VERSION}({BASELINE_OS}) -> {current_version}({current_os}) 格式发生重构")
                     print(f"           基准: {baseline_hash}")
                     print(f"           当前: {current_hash}")
                 else:
-                    print(f"[静态探测] {case_name} | {BASELINE_VERSION} -> {current_version} 格式维持兼容")
+                    print(f"[版本兼容] {case_name} | {BASELINE_VERSION} -> {current_version} 格式维持兼容")
             else:
                 print(f"[无基准] {case_name} | {current_version} hash={current_hash}")
 
@@ -458,13 +474,16 @@ def _run_with_report():
     from datetime import datetime
 
     current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    current_os = platform.system()
+    same_env = (current_version == BASELINE_VERSION and current_os == BASELINE_OS)
     report = {
         "metadata": {
             "python_version": sys.version,
-            "platform": platform.system(),
+            "platform": current_os,
             "machine": platform.machine(),
             "timestamp": datetime.now().isoformat(),
             "baseline_version": BASELINE_VERSION,
+            "baseline_os": BASELINE_OS,
             "current_version": current_version,
         },
         "static_cases": [],
@@ -481,8 +500,18 @@ def _run_with_report():
     }
 
     print(f"\n{'='*60}")
-    print(f"marshal 稳定性测试 | Python {current_version} | {platform.system()}")
+    print(f"marshal 稳定性测试 | Python {current_version} | {current_os}")
     print(f"{'='*60}\n")
+    env_tag = "基准环境" if same_env else f"对比环境 ({current_os})"
+    print(f"环境模式: {env_tag}\n")
+
+    def _categorize(name, current_hash, baseline_hash, skip):
+        if same_env:
+            if skip:
+                return "uncertain"
+            return "passed" if current_hash == baseline_hash else "failed"
+        else:
+            return "unchanged" if current_hash == baseline_hash else "changed"
 
     # --- 静态用例 ---
     print("--- 静态用例测试 ---")
@@ -492,34 +521,27 @@ def _run_with_report():
 
         try:
             current_hash = _compute_hash(obj)
-            status = "unknown"
+            status = _categorize(name, current_hash, baseline_hash, skip)
 
-            if current_version == BASELINE_VERSION:
-                if skip:
-                    status = "uncertain"
-                    report["summary"]["uncertain"] += 1
-                    if current_hash != baseline_hash:
-                        print(f"[不确定性警告] {name}")
-                    else:
-                        print(f"[静态探测] {name} | 兼容")
-                else:
-                    if current_hash == baseline_hash:
-                        status = "passed"
-                        report["summary"]["passed"] += 1
-                        print(f"[✓] {name} | 跨平台一致")
-                    else:
-                        status = "failed"
-                        report["summary"]["failed"] += 1
-                        print(f"[✗] {name} | 跨平台不一致!")
-            else:
+            report["summary"][status] = report["summary"].get(status, 0) + 1
+
+            if status == "passed":
+                print(f"[✓] {name} | 同环境一致")
+            elif status == "failed":
+                print(f"[✗] {name} | 同环境不一致! "
+                      f"当前={current_hash[:16]}..., 基准={baseline_hash[:16]}...")
+            elif status == "uncertain":
                 if current_hash != baseline_hash:
-                    status = "changed"
-                    report["summary"]["changed"] += 1
-                    print(f"[变化探测] {name} | 格式重构")
+                    print(f"[不确定性] {name} | 哈希漂移")
                 else:
-                    status = "unchanged"
-                    report["summary"]["unchanged"] += 1
-                    print(f"[静态探测] {name} | 格式兼容")
+                    print(f"[静态探测] {name} | 兼容")
+            elif status == "changed":
+                tag = (f"({BASELINE_OS}->{current_os})"
+                       if current_version == BASELINE_VERSION
+                       else f"({BASELINE_VERSION}->{current_version})")
+                print(f"[变化] {name} {tag}")
+            else:
+                print(f"[兼容] {name} | 跨环境格式维持")
 
             report["static_cases"].append({
                 "name": name,
@@ -531,7 +553,7 @@ def _run_with_report():
 
         except Exception as e:
             status = "error"
-            report["summary"]["failed"] += 1
+            report["summary"]["failed"] = report["summary"].get("failed", 0) + 1
             print(f"[错误] {name}: {e}")
             report["static_cases"].append({
                 "name": name,
@@ -549,26 +571,14 @@ def _run_with_report():
 
         try:
             current_hash = _compute_hash(fuzz_obj)
-            status = "unknown"
+            status = _categorize(f"fuzzer_iter_{i}", current_hash, baseline_hash, skip=True)
 
-            if current_version == BASELINE_VERSION:
-                if current_hash == baseline_hash:
-                    status = "passed"
-                    report["summary"]["passed"] += 1
-                else:
-                    status = "failed"
-                    report["summary"]["failed"] += 1
-                    print(f"[✗] fuzzer_iter_{i} | 不一致!")
-            else:
-                if current_hash != baseline_hash:
-                    status = "changed"
-                    report["summary"]["changed"] += 1
-                else:
-                    status = "unchanged"
-                    report["summary"]["unchanged"] += 1
+            report["summary"][status] = report["summary"].get(status, 0) + 1
 
             if status in ("changed", "failed"):
                 print(f"[{status.upper()}] fuzzer_iter_{i}")
+            elif status == "uncertain" and current_hash != baseline_hash:
+                print(f"[不确定性] fuzzer_iter_{i} | 哈希漂移")
 
             report["fuzzer_cases"].append({
                 "iteration": i,
