@@ -16,6 +16,7 @@ marshal 模块跨平台/跨版本兼容性测试脚本
 """
 
 import sys
+import os
 import marshal
 import hashlib
 import random
@@ -24,6 +25,7 @@ import platform
 #---全局约束配置---
 BASELINE_VERSION = "3.10"       # 基准哈希采集时的 Python 版本
 BASELINE_OS = "Windows"         # 基准哈希采集时的操作系统（Windows 本地采集）
+IN_CI = os.environ.get("CI") == "true"  # GitHub Actions CI 环境检测
 GLOBAL_SEED = 42
 FUZZER_ITERATIONS = 50  # 模糊测试迭代次数
 
@@ -365,10 +367,14 @@ def run_comparison(case_name, test_data, baseline_hash, current_version, skip_as
     try:
         current_hash = _compute_hash(test_data)
         current_os = platform.system()
-        same_env = (current_version == BASELINE_VERSION and current_os == BASELINE_OS)
+        # 严格断言条件: 同 Python 版本 + 同 OS + 不在 CI 环境
+        # (CI 的 Python 编译版本与本地不同，marshal 输出可能不同)
+        strict_mode = (current_version == BASELINE_VERSION
+                       and current_os == BASELINE_OS
+                       and not IN_CI)
 
-        if same_env:
-            # 同版本 + 同操作系统 → 严格校验序列化确定性
+        if strict_mode:
+            # 同版本 + 同操作系统 + 本地运行 → 严格校验序列化确定性
             if baseline_hash and not skip_assert:
                 assert current_hash == baseline_hash, (
                     f"[{case_name}] 同环境确定性异常: "
@@ -475,7 +481,9 @@ def _run_with_report():
 
     current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
     current_os = platform.system()
-    same_env = (current_version == BASELINE_VERSION and current_os == BASELINE_OS)
+    strict_mode = (current_version == BASELINE_VERSION
+                   and current_os == BASELINE_OS
+                   and not IN_CI)
     report = {
         "metadata": {
             "python_version": sys.version,
@@ -502,11 +510,11 @@ def _run_with_report():
     print(f"\n{'='*60}")
     print(f"marshal 稳定性测试 | Python {current_version} | {current_os}")
     print(f"{'='*60}\n")
-    env_tag = "基准环境" if same_env else f"对比环境 ({current_os})"
+    env_tag = "本地基准环境(严格)" if strict_mode else f"CI 对比环境 ({current_os})"
     print(f"环境模式: {env_tag}\n")
 
     def _categorize(name, current_hash, baseline_hash, skip):
-        if same_env:
+        if strict_mode:
             if skip:
                 return "uncertain"
             return "passed" if current_hash == baseline_hash else "failed"
