@@ -59,7 +59,6 @@ def main():
             "summary": combined_summary,
             "cross_environment_comparison": comparison_table,
         },
-        "individual_reports": all_reports,
     }
 
     output_path = os.path.join(OUTPUT_DIR, "combined_marshal_report.json")
@@ -67,6 +66,7 @@ def main():
         json.dump(combined, f, indent=2, ensure_ascii=False)
 
     print(f"✅ 合并完成: {len(all_reports)} 份报告 -> {output_path}")
+    print(f"   (如需查看原始详细报告，请在 Artifacts 中下载单份 report-* 压缩包)")
 
 
 def _build_comparison_table(all_reports):
