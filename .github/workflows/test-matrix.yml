@@ -63,7 +63,6 @@ jobs:
       - name: 生成 JSON 结构化报告
         run: |
           python tests/test_marshal.py
-          mkdir -p test-results
           mv marshal_report_py*.json test-results/
                   # Step 6：调用 _run_with_report() 输出 JSON 到 test-results/
 
