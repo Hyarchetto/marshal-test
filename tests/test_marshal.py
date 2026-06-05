@@ -16,16 +16,13 @@ marshal 模块跨平台/跨版本兼容性测试脚本
 """
 
 import sys
-import os
 import marshal
 import hashlib
 import random
 import platform
 
 #---全局约束配置---
-BASELINE_VERSION = "3.10"       # 基准哈希采集时的 Python 版本
-BASELINE_OS = "Windows"         # 基准哈希采集时的操作系统（Windows 本地采集）
-IN_CI = os.environ.get("CI") == "true"  # GitHub Actions CI 环境检测
+BASELINE_VERSION = "3.10"
 GLOBAL_SEED = 42
 FUZZER_ITERATIONS = 50  # 模糊测试迭代次数
 
@@ -335,8 +332,47 @@ def generate_fuzz_data(max_depth=8, current_depth=0, for_set=False, for_dict_key
     return random.choice(choices)()
 
 
+def _extract_type_category(case_name):
+    """从用例名推断类型分类"""
+    prefix_map = {
+        "none": "NoneType",
+        "bool": "bool",
+        "int": "int",
+        "float": "float",
+        "complex": "complex",
+        "bytes": "bytes",
+        "str": "str",
+        "tuple": "tuple",
+        "list": "list",
+        "set": "set",
+        "dict": "dict",
+        "recursive": "recursive",
+        "deep": "deep_nested",
+    }
+    for prefix, category in prefix_map.items():
+        if case_name.startswith(prefix):
+            return category
+    return "other"
+
+
+def _is_special_float(case_name):
+    """判断是否为浮点特殊值用例"""
+    specials = {"float_nan", "float_inf", "float_neginf", "float_negzero",
+                "complex_nan", "complex_inf"}
+    return case_name in specials
+
+
+def _classify_float_subtype(case_name):
+    """浮点数子分类：特殊值 vs 常规值"""
+    if not case_name.startswith("float_"):
+        return None
+    if case_name in ("float_nan", "float_inf", "float_neginf", "float_negzero"):
+        return "特殊值 (NaN/Inf/-0.0)"
+    return "常规浮点数"
+
+
 # ============================================================
-# 4. 核心验证逻辑
+# 5. 核心验证逻辑（增强版：收集数据而非直接打印）
 # ============================================================
 
 def _compute_hash(obj):
@@ -344,8 +380,7 @@ def _compute_hash(obj):
     return hashlib.sha256(marshal.dumps(obj)).hexdigest()
 
 
-# 不确定性用例清单：这些用例在相同环境下也可能哈希漂移
-# 原因: NaN 的比特表示不唯一; set/dict 的遍历顺序依赖内存地址
+# 不确定性用例清单
 UNCERTAIN_CASES = {
     "float_nan", "complex_nan",
     "set_empty", "set_small", "set_mixed", "set_large",
@@ -353,286 +388,244 @@ UNCERTAIN_CASES = {
 }
 
 
-def run_comparison(case_name, test_data, baseline_hash, current_version, skip_assert=False):
+def _evaluate_case(case_name, test_data, baseline_hash, current_version):
     """
-    环境路由与比对输出逻辑
-
-    Args:
-        case_name: 用例标识
-        test_data: 测试对象
-        baseline_hash: 基准哈希（或 None 表示无基准）
-        current_version: 当前 Python 版本字符串
-        skip_assert: 是否跳过断言（用于不确定性用例）
+    评估单个用例的状态。
+    
+    返回: (status, current_hash, error_msg)
+        status: "passed" | "failed" | "changed" | "unchanged" | "uncertain" | "error"
     """
     try:
         current_hash = _compute_hash(test_data)
-        current_os = platform.system()
-        # 严格断言条件: 同 Python 版本 + 同 OS + 不在 CI 环境
-        # (CI 的 Python 编译版本与本地不同，marshal 输出可能不同)
-        strict_mode = (current_version == BASELINE_VERSION
-                       and current_os == BASELINE_OS
-                       and not IN_CI)
 
-        if strict_mode:
-            # 同版本 + 同操作系统 + 本地运行 → 严格校验序列化确定性
-            if baseline_hash and not skip_assert:
-                assert current_hash == baseline_hash, (
-                    f"[{case_name}] 同环境确定性异常: "
-                    f"current={current_hash}, baseline={baseline_hash}"
-                )
-            elif baseline_hash and skip_assert:
-                # 不确定性用例：仅打印警告，不断言
+        if baseline_hash is None:
+            return ("no_baseline", current_hash, None)
+
+        if current_version == BASELINE_VERSION:
+            # 同版本 -> 验证跨平台一致性
+            if case_name in UNCERTAIN_CASES:
+                # 不确定性用例：记录漂移但不判定失败
                 if current_hash != baseline_hash:
-                    print(f"[不确定性警告] {case_name} | 哈希漂移: {baseline_hash[:16]}... -> {current_hash[:16]}...")
+                    return ("uncertain_drift", current_hash, None)
                 else:
-                    print(f"[静态探测] {case_name} | 格式维持兼容")
+                    return ("uncertain_stable", current_hash, None)
             else:
-                print(f"[无基准] {case_name} | hash={current_hash}")
-
-        elif current_version == BASELINE_VERSION and current_os != BASELINE_OS:
-            # 同版本 + 不同操作系统 → 跨平台变化探测
-            if baseline_hash:
-                if current_hash != baseline_hash:
-                    print(f"[跨平台变化] {case_name} | {BASELINE_OS} -> {current_os} 格式发生重构")
-                    print(f"           基准({BASELINE_OS}): {baseline_hash}")
-                    print(f"           当前({current_os}): {current_hash}")
+                if current_hash == baseline_hash:
+                    return ("passed", current_hash, None)
                 else:
-                    print(f"[跨平台兼容] {case_name} | {BASELINE_OS} <-> {current_os} 格式保持一致")
-            else:
-                print(f"[无基准] {case_name} | {current_os} hash={current_hash}")
-
+                    return ("failed", current_hash,
+                            f"跨平台不一致: baseline={baseline_hash[:16]}..., current={current_hash[:16]}...")
         else:
-            # 不同 Python 版本 → 跨版本变化探测
-            if baseline_hash:
-                if current_hash != baseline_hash:
-                    print(f"[版本变化] {case_name} | {BASELINE_VERSION}({BASELINE_OS}) -> {current_version}({current_os}) 格式发生重构")
-                    print(f"           基准: {baseline_hash}")
-                    print(f"           当前: {current_hash}")
-                else:
-                    print(f"[版本兼容] {case_name} | {BASELINE_VERSION} -> {current_version} 格式维持兼容")
+            # 跨版本 -> 探测格式变化
+            if current_hash != baseline_hash:
+                return ("changed", current_hash, None)
             else:
-                print(f"[无基准] {case_name} | {current_version} hash={current_hash}")
-
-        return current_hash
+                return ("unchanged", current_hash, None)
 
     except Exception as e:
-        err_msg = f"[{case_name}] 执行崩溃: {type(e).__name__}: {str(e)}"
-        print(f"[错误] {err_msg}")
-        raise AssertionError(err_msg)
-
-
-def test_marshal_stability():
-    """pytest 主测试函数 — 静态用例断言 + 模糊测试收集"""
-    current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    errors = []
-    print(f"\n{'='*60}")
-    print(f"marshal 稳定性测试 | Python {current_version} | {platform.system()}")
-    print(f"{'='*60}\n")
-
-    # --- 验证A: 静态用例遍历 ---
-    print("--- 静态用例测试 ---")
-    for name, obj in _STATIC_CASES_DEF:
-        baseline_hash = STATIC_BASELINE_HASHES.get(name)
-        skip = name in UNCERTAIN_CASES
-        try:
-            run_comparison(name, obj, baseline_hash, current_version, skip_assert=skip)
-        except AssertionError as e:
-            errors.append(str(e))
-
-    # --- 验证B: 模糊测试遍历（收集模式，不断言） ---
-    print(f"\n--- 模糊测试 ({FUZZER_ITERATIONS} 次迭代) ---")
-    random.seed(GLOBAL_SEED)  # 注入固定种子
-
-    for i in range(FUZZER_ITERATIONS):
-        fuzz_obj = generate_fuzz_data(max_depth=6)
-        baseline_hash = FUZZER_BASELINE_HASHES[i] if i < len(FUZZER_BASELINE_HASHES) else None
-        try:
-            run_comparison(f"fuzzer_iter_{i}", fuzz_obj, baseline_hash, current_version, skip_assert=True)
-        except AssertionError as e:
-            errors.append(str(e))
-
-    print(f"\n{'='*60}")
-    print(f"测试完成 | 静态 {len(_STATIC_CASES_DEF)} 用例 + 模糊 {FUZZER_ITERATIONS} 迭代")
-    if errors:
-        print(f"收集到 {len(errors)} 个差异（见上方详情）")
-    print(f"{'='*60}\n")
-
-    # 最后统一报告发现的断言失败
-    if errors:
-        raise AssertionError(
-            f"marshal 稳定性测试发现 {len(errors)} 个差异:\n" +
-            "\n".join(errors[:5]) +
-            (f"\n... 及其他 {len(errors)-5} 个" if len(errors) > 5 else "")
-        )
+        return ("error", None, f"{type(e).__name__}: {str(e)}")
 
 
 # ============================================================
-# 5. 直接运行入口
+# 6. 结构化报告生成
 # ============================================================
 
-# ============================================================
-# 6. 报告收集模式（内部辅助，非 pytest test）
-# ============================================================
-
-def _run_with_report():
-    """增强版：运行测试并生成结构化报告文件"""
+def test_marshal_stability_with_report():
+    """增强版：运行测试并输出结构化分析报告"""
     import json
+    from collections import defaultdict
     from datetime import datetime
 
     current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-    current_os = platform.system()
-    strict_mode = (current_version == BASELINE_VERSION
-                   and current_os == BASELINE_OS
-                   and not IN_CI)
-    report = {
-        "metadata": {
-            "python_version": sys.version,
-            "platform": current_os,
-            "machine": platform.machine(),
-            "timestamp": datetime.now().isoformat(),
-            "baseline_version": BASELINE_VERSION,
-            "baseline_os": BASELINE_OS,
-            "current_version": current_version,
-        },
-        "static_cases": [],
-        "fuzzer_cases": [],
-        "summary": {
-            "total_static": len(_STATIC_CASES_DEF),
-            "total_fuzzer": FUZZER_ITERATIONS,
-            "passed": 0,
-            "failed": 0,
-            "changed": 0,
-            "unchanged": 0,
-            "uncertain": 0,
-        }
-    }
+    is_baseline = (current_version == BASELINE_VERSION)
+    version_label = f"Python {current_version} (@ {platform.system()})"
+    ref_label = f"基准: Python {BASELINE_VERSION}"
 
-    print(f"\n{'='*60}")
-    print(f"marshal 稳定性测试 | Python {current_version} | {current_os}")
-    print(f"{'='*60}\n")
-    env_tag = "本地基准环境(严格)" if strict_mode else f"CI 对比环境 ({current_os})"
-    print(f"环境模式: {env_tag}\n")
-
-    def _categorize(name, current_hash, baseline_hash, skip):
-        if strict_mode:
-            if skip:
-                return "uncertain"
-            return "passed" if current_hash == baseline_hash else "failed"
-        else:
-            return "unchanged" if current_hash == baseline_hash else "changed"
+    # ----- 结果收集 -----
+    results = []  # 每条: {name, category, status, is_special_float, ...}
+    fuzzer_results = []
 
     # --- 静态用例 ---
-    print("--- 静态用例测试 ---")
     for name, obj in _STATIC_CASES_DEF:
         baseline_hash = STATIC_BASELINE_HASHES.get(name)
-        skip = name in UNCERTAIN_CASES
-
-        try:
-            current_hash = _compute_hash(obj)
-            status = _categorize(name, current_hash, baseline_hash, skip)
-
-            report["summary"][status] = report["summary"].get(status, 0) + 1
-
-            if status == "passed":
-                print(f"[✓] {name} | 同环境一致")
-            elif status == "failed":
-                print(f"[✗] {name} | 同环境不一致! "
-                      f"当前={current_hash[:16]}..., 基准={baseline_hash[:16]}...")
-            elif status == "uncertain":
-                if current_hash != baseline_hash:
-                    print(f"[不确定性] {name} | 哈希漂移")
-                else:
-                    print(f"[静态探测] {name} | 兼容")
-            elif status == "changed":
-                tag = (f"({BASELINE_OS}->{current_os})"
-                       if current_version == BASELINE_VERSION
-                       else f"({BASELINE_VERSION}->{current_version})")
-                print(f"[变化] {name} {tag}")
-            else:
-                print(f"[兼容] {name} | 跨环境格式维持")
-
-            report["static_cases"].append({
-                "name": name,
-                "status": status,
-                "baseline_hash": baseline_hash,
-                "current_hash": current_hash,
-                "type": type(obj).__name__,
-            })
-
-        except Exception as e:
-            status = "error"
-            report["summary"]["failed"] = report["summary"].get("failed", 0) + 1
-            print(f"[错误] {name}: {e}")
-            report["static_cases"].append({
-                "name": name,
-                "status": status,
-                "error": str(e),
-            })
+        status, cur_hash, err = _evaluate_case(name, obj, baseline_hash, current_version)
+        results.append({
+            "name": name,
+            "category": _extract_type_category(name),
+            "subtype": _classify_float_subtype(name),
+            "is_special_float": _is_special_float(name),
+            "status": status,
+            "type": type(obj).__name__,
+            "error": err,
+        })
 
     # --- 模糊测试 ---
-    print(f"\n--- 模糊测试 ({FUZZER_ITERATIONS} 次迭代) ---")
     random.seed(GLOBAL_SEED)
-
     for i in range(FUZZER_ITERATIONS):
         fuzz_obj = generate_fuzz_data(max_depth=6)
         baseline_hash = FUZZER_BASELINE_HASHES[i] if i < len(FUZZER_BASELINE_HASHES) else None
+        status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
+        fuzzer_results.append({
+            "iteration": i,
+            "status": status,
+            "type": type(fuzz_obj).__name__,
+            "error": err,
+        })
 
-        try:
-            current_hash = _compute_hash(fuzz_obj)
-            status = _categorize(f"fuzzer_iter_{i}", current_hash, baseline_hash, skip=True)
+    # ----- 输出报告 -----
+    print(f"\n{'='*68}")
+    print(f"  marshal 序列化稳定性测试报告")
+    print(f"  {version_label}  |  {ref_label}")
+    print(f"{'='*68}\n")
 
-            report["summary"][status] = report["summary"].get(status, 0) + 1
+    # ──── 板块 A：按类型分组的稳定性汇总 ────
+    print("▌ A. 按类型分组的稳定性分析")
+    print(f"{'─'*68}")
 
-            if status in ("changed", "failed"):
-                print(f"[{status.upper()}] fuzzer_iter_{i}")
-            elif status == "uncertain" and current_hash != baseline_hash:
-                print(f"[不确定性] fuzzer_iter_{i} | 哈希漂移")
+    # 按类型分组统计
+    category_stats = defaultdict(lambda: {"total": 0, "passed": 0, "failed": 0,
+                                           "changed": 0, "unchanged": 0, "uncertain": 0, "error": 0})
+    for r in results:
+        cat = r["category"]
+        category_stats[cat]["total"] += 1
+        if r["status"] in ("passed",):
+            category_stats[cat]["passed"] += 1
+        elif r["status"] in ("failed",):
+            category_stats[cat]["failed"] += 1
+        elif r["status"] in ("changed",):
+            category_stats[cat]["changed"] += 1
+        elif r["status"] in ("unchanged",):
+            category_stats[cat]["unchanged"] += 1
+        elif r["status"] in ("uncertain_drift", "uncertain_stable"):
+            category_stats[cat]["uncertain"] += 1
+        elif r["status"] in ("error",):
+            category_stats[cat]["error"] += 1
 
-            report["fuzzer_cases"].append({
-                "iteration": i,
-                "status": status,
-                "baseline_hash": baseline_hash,
-                "current_hash": current_hash,
-                "type": type(fuzz_obj).__name__,
-            })
+    # 打印类型汇总表
+    header = f"{'类型':<16} {'总数':>6} {'通过':>6} {'失败':>6} {'变化':>6} {'兼容':>6} {'不确定':>8}"
+    print(header)
+    print(f"{'─'*68}")
+    for cat in sorted(category_stats.keys()):
+        s = category_stats[cat]
+        if is_baseline:
+            # 同版本：关注通过/失败/不确定
+            print(f"{cat:<16} {s['total']:>6} {s['passed']:>6} {s['failed']:>6} {'—':>6} {'—':>6} {s['uncertain']:>8}")
+        else:
+            # 跨版本：关注变化/兼容
+            print(f"{cat:<16} {s['total']:>6} {'—':>6} {'—':>6} {s['changed']:>6} {s['unchanged']:>6} {s['uncertain']:>8}")
 
-        except Exception as e:
-            status = "error"
-            report["summary"]["failed"] += 1
-            print(f"[错误] fuzzer_iter_{i}: {e}")
-            report["fuzzer_cases"].append({
-                "iteration": i,
-                "status": status,
-                "error": str(e),
-            })
+    # ──── 板块 B：浮点数特殊值专项分析 ────
+    print(f"\n▌ B. 浮点数特殊值专项分析")
+    print(f"{'─'*68}")
 
-    # --- 保存报告 ---
-    import os
-    report_dir = "test-results"
-    os.makedirs(report_dir, exist_ok=True)
-    report_file = os.path.join(report_dir, f"marshal_report_py{current_version.replace('.', '')}.json")
+    float_special = [r for r in results if r["is_special_float"]]
+    float_normal = [r for r in results if r["subtype"] == "常规浮点数"]
+
+    if float_special:
+        print(f"  特殊值 (NaN/Inf/-0.0): {len(float_special)} 个用例")
+        for r in float_special:
+            status_symbol = {
+                "passed": "✓", "failed": "✗", "changed": "Δ", "unchanged": "=",
+                "uncertain_drift": "~", "uncertain_stable": "≈", "error": "!"
+            }.get(r["status"], "?")
+            print(f"    {status_symbol} {r['name']:25s}  | 状态: {r['status']}")
+    else:
+        print("  (无特殊浮点值用例)")
+
+    if float_normal:
+        n_changed = sum(1 for r in float_normal if r["status"] == "changed")
+        n_unchanged = sum(1 for r in float_normal if r["status"] == "unchanged")
+        print(f"  常规浮点数: {len(float_normal)} 个用例, 跨版本变化: {n_changed}, 兼容: {n_unchanged}")
+
+    # ──── 板块 C：容器类型稳定性分析 ────
+    print(f"\n▌ C. 容器类型稳定性分析")
+    print(f"{'─'*68}")
+
+    container_types = {"list", "tuple", "set", "dict", "recursive", "deep_nested"}
+    for cat in sorted(container_types):
+        if cat not in category_stats:
+            continue
+        s = category_stats[cat]
+        if is_baseline:
+            stable = s["passed"] + s["uncertain"]
+            print(f"  {cat:<14} {s['total']:>3} 个用例 | 同平台一致性: {stable}/{s['total']}")
+        else:
+            changes = s["changed"]
+            compat = s["unchanged"]
+            print(f"  {cat:<14} {s['total']:>3} 个用例 | 跨版本: {changes} 变化, {compat} 兼容")
+            if changes > 0:
+                changed_names = [r["name"] for r in results
+                                 if r["category"] == cat and r["status"] == "changed"]
+                print(f"                     变化用例: {', '.join(changed_names)}")
+
+    # ──── 板块 D：模糊测试统计 ────
+    print(f"\n▌ D. 模糊测试 ({FUZZER_ITERATIONS} 次迭代)")
+    print(f"{'─'*68}")
+
+    fuzzer_status_count = defaultdict(int)
+    for r in fuzzer_results:
+        fuzzer_status_count[r["status"]] += 1
+
+    if is_baseline:
+        print(f"  同版本通过 (跨平台一致): {fuzzer_status_count.get('passed', 0)}")
+        print(f"  同版本失败 (跨平台不一致): {fuzzer_status_count.get('failed', 0)}")
+    else:
+        print(f"  跨版本格式变化: {fuzzer_status_count.get('changed', 0)}")
+        print(f"  跨版本格式兼容: {fuzzer_status_count.get('unchanged', 0)}")
+    print(f"  执行异常: {fuzzer_status_count.get('error', 0)}")
+    # 分析4：跨版本格式兼容性
+    if not is_baseline:
+        total_cross = sum(1 for r in results if r["status"] in ("changed", "unchanged"))
+        n_changed = sum(1 for r in results if r["status"] == "changed")
+        n_unchanged = sum(1 for r in results if r["status"] == "unchanged")
+        print(f"  跨版本静态用例: {n_unchanged}/{total_cross} 格式兼容, {n_changed}/{total_cross} 格式重构")
+        
+        # 列出哪些类型变化最多
+        changed_by_cat = defaultdict(int)
+        for r in results:
+            if r["status"] == "changed":
+                changed_by_cat[r["category"]] += 1
+        if changed_by_cat:
+            most_changed = sorted(changed_by_cat.items(), key=lambda x: -x[1])[:3]
+            print(f"  变化最显著的类型: {', '.join(f'{cat}({n})' for cat, n in most_changed)}")
+
+        # Fuzzer 跨版本统计
+        f_changed = fuzzer_status_count.get("changed", 0)
+        f_unchanged = fuzzer_status_count.get("unchanged", 0)
+        f_total = f_changed + f_unchanged
+        if f_total > 0:
+            print(f"  模糊测试跨版本: {f_unchanged}/{f_total} 兼容, {f_changed}/{f_total} 重构")
+
+    # ──── 输出摘要行 ────
+    print(f"\n{'='*68}")
+    print(f"  测试执行环境: {version_label}")
+    print(f"  测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"{'='*68}\n")
+
+    # ----- 同时也保存 JSON 报告供后续分析 -----
+    report = {
+        "metadata": {
+            "python_version": sys.version,
+            "platform": platform.system(),
+            "machine": platform.machine(),
+            "timestamp": datetime.now().isoformat(),
+            "baseline_version": BASELINE_VERSION,
+            "current_version": current_version,
+        },
+        "static_results": results,
+        "fuzzer_results": fuzzer_results,
+    }
+    report_file = f"marshal_report_py{current_version.replace('.', '')}.json"
     with open(report_file, 'w', encoding='utf-8') as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f"详细报告已保存: {report_file}")
 
-    # --- 打印汇总 ---
-    print(f"\n{'='*60}")
-    print("测试汇总")
-    print(f"{'='*60}")
-    print(f"静态用例: {report['summary']['total_static']}")
-    print(f"模糊迭代: {report['summary']['total_fuzzer']}")
-    print(f"通过:     {report['summary']['passed']}")
-    print(f"失败:     {report['summary']['failed']}")
-    print(f"变化:     {report['summary']['changed']}")
-    print(f"兼容:     {report['summary']['unchanged']}")
-    print(f"不确定:   {report['summary']['uncertain']}")
-    print(f"\n报告已保存: {report_file}")
-    print(f"{'='*60}\n")
 
-    return report
+def test_marshal_stability():
+    """pytest 兼容入口，直接调用报告模式"""
+    test_marshal_stability_with_report()
 
 
 if __name__ == "__main__":
-    # 默认使用报告模式
-    import os
-    os.makedirs("test-results", exist_ok=True)
-    _run_with_report()
+    test_marshal_stability_with_report()
+

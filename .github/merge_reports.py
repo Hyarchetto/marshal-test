@@ -76,7 +76,7 @@ def _build_comparison_table(all_reports):
     # 收集所有用例名字
     case_names = set()
     for r in all_reports:
-        for c in r.get("static_cases", []):
+        for c in r.get("static_results", []):
             case_names.add(c["name"])
     case_names = sorted(case_names)
 
@@ -91,12 +91,12 @@ def _build_comparison_table(all_reports):
     for name in case_names:
         row = {"case": name, "type": "", "environments": {}}
         for r, key in zip(all_reports, env_keys):
-            for c in r.get("static_cases", []):
+            for c in r.get("static_results", []):
                 if c["name"] == name:
                     row["type"] = c.get("type", "")
                     row["environments"][key] = {
                         "status": c.get("status", "?"),
-                        "hash": c.get("current_hash", "?")[:12],
+                        "hash": (c.get("current_hash") or "?")[:12],
                     }
                     break
         rows.append(row)

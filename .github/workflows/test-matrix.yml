@@ -61,7 +61,10 @@ jobs:
                   # Step 5：跑 tests/ 下所有 test_*.py 文件
 
       - name: 生成 JSON 结构化报告
-        run: python tests/test_marshal.py
+        run: |
+          python tests/test_marshal.py
+          mkdir -p test-results
+          mv marshal_report_py*.json test-results/
                   # Step 6：调用 _run_with_report() 输出 JSON 到 test-results/
 
       - name: 上传测试报告
