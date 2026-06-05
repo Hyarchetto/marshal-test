@@ -14,8 +14,8 @@ OUTPUT_DIR = "combined-report"
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # 收集所有 JSON 报告
-    report_files = glob.glob(os.path.join(REPORT_DIR, "marshal_report_py*.json"))
+    # 收集所有 JSON 报告（递归搜索子目录）
+    report_files = glob.glob(os.path.join(REPORT_DIR, "**", "marshal_report_py*.json"), recursive=True)
     if not report_files:
         print("没有找到任何 marshal 报告文件")
         return

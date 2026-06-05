@@ -87,7 +87,6 @@ jobs:
         with:
           path: all-reports/
           pattern: report-*
-          merge-multiple: true
 
       - name: 合并 JSON 报告
         run: python .github/merge_reports.py
