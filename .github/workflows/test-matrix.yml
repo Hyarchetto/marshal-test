@@ -57,7 +57,7 @@ jobs:
                   # Step 4：打印环境，方便排查
 
       - name: 运行 pytest 测试套件
-        run: python -m pytest tests/ -v --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
+        run: python -m pytest tests/ -v -s --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
                   # Step 5：跑 tests/ 下所有 test_*.py 文件
 
       - name: 上传测试报告
