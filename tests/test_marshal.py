@@ -608,6 +608,9 @@ def test_marshal_stability_with_report():
     if is_baseline:
         print(f"  同版本通过 (跨平台一致): {fuzzer_status_count.get('passed', 0)}")
         print(f"  同版本失败 (跨平台不一致): {fuzzer_status_count.get('failed', 0)}")
+        uncertain_cnt = fuzzer_status_count.get("uncertain_drift", 0) + fuzzer_status_count.get("uncertain_stable", 0)
+        if uncertain_cnt:
+            print(f"  非确定性类型 (set/dict/NaN 跳过): {uncertain_cnt}")
     else:
         print(f"  跨版本格式变化: {fuzzer_status_count.get('changed', 0)}")
         print(f"  跨版本格式兼容: {fuzzer_status_count.get('unchanged', 0)}")
