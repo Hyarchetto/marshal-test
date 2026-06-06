@@ -54,7 +54,7 @@ jobs:
       - name: 显示环境信息
         run: |
           python --version
-          python -c "import sys,platform; print(sys.version); print(platform.system(), platform.release())"
+          python -c "import sys,platform,os; print(sys.version); print(platform.system(), platform.release()); print('PYTHONHASHSEED=', os.environ.get('PYTHONHASHSEED','NOT SET'))"
                   # Step 4：打印环境，方便排查
 
       - name: 运行 pytest 测试套件
@@ -63,6 +63,8 @@ jobs:
 
       - name: 生成 JSON 结构化报告 (marshal 主报告)
         shell: bash
+        env:
+          PYTHONHASHSEED: 0
         run: |
           mkdir -p test-results
           python tests/test_marshal.py 2>&1 | tee test-results/marshal_report_py$(echo "${{ matrix.python-version }}" | tr -d '.').txt
@@ -71,6 +73,8 @@ jobs:
 
       - name: 生成 JSON 结构化报告 (矩阵环境验证)
         shell: bash
+        env:
+          PYTHONHASHSEED: 0
         run: |
           python tests/test_marshal_matrix.py 2>&1 | tee test-results/marshal_matrix_report_py$(echo "${{ matrix.python-version }}" | tr -d '.').txt
           mv marshal_matrix_report_py*.json test-results/
