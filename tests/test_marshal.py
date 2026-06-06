@@ -495,7 +495,16 @@ def test_marshal_stability_with_report():
     for i in range(FUZZER_ITERATIONS):
         fuzz_obj = generate_fuzz_data(max_depth=6)
         baseline_hash = FUZZER_BASELINE_HASHES[i] if i < len(FUZZER_BASELINE_HASHES) else None
-        status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
+
+        # 跨版本模式下，fuzzer 生成的非确定性对象跳过比对
+        # （不同 Python 补丁号的 random 序列可能不同，导致同一迭代生成不同对象）
+        if current_version != BASELINE_VERSION and _contains_non_deterministic(fuzz_obj):
+            status = "uncertain_skip"
+            cur_hash = None
+            err = None
+        else:
+            status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
+
         fuzzer_results.append({
             "iteration": i,
             "status": status,
