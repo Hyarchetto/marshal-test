@@ -57,9 +57,33 @@ jobs:
           python -c "import sys,platform,os; print(sys.version); print(platform.system(), platform.release()); print('PYTHONHASHSEED=', os.environ.get('PYTHONHASHSEED','NOT SET'))"
                   # Step 4：打印环境，方便排查
 
+      - name: 随机序列一致性诊断 (验证 random 是否跨 OS 一致)
+        run: |
+          echo "=== random.seed(42) 前 5 个随机数 ==="
+          python -c "
+import random
+random.seed(42)
+for i in range(5):
+    print(f'  #{i}: {random.random()}')
+"
+          echo "=== random.seed(42) 前 5 个 randint(0,100) ==="
+          python -c "
+import random
+random.seed(42)
+for i in range(5):
+    print(f'  #{i}: {random.randint(0,100)}')
+"
+          echo "=== sys.version 详情 ==="
+          python -c "
+import sys; v = sys.version_info
+print(f'  Python {v.major}.{v.minor}.{v.micro} ({v.releaselevel})')
+print(f'  {sys.version}')
+"
+                  # Step 5：诊断 random 序列
+
       - name: 运行 pytest 测试套件
         run: python -m pytest tests/ -v -s --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
-                  # Step 5：跑 tests/ 下所有 test_*.py 文件
+                  # Step 6：跑 tests/ 下所有 test_*.py 文件
 
       - name: 生成 JSON 结构化报告 (marshal 主报告)
         shell: bash
