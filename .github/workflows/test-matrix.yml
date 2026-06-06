@@ -58,28 +58,8 @@ jobs:
                   # Step 4：打印环境，方便排查
 
       - name: 随机序列一致性诊断 (验证 random 是否跨 OS 一致)
-        run: |
-          echo "=== random.seed(42) 前 5 个随机数 ==="
-          python << 'EOF'
-import random
-random.seed(42)
-for i in range(5):
-    print(f'  #{i}: {random.random()}')
-EOF
-          echo "=== random.seed(42) 前 5 个 randint(0,100) ==="
-          python << 'EOF'
-import random
-random.seed(42)
-for i in range(5):
-    print(f'  #{i}: {random.randint(0,100)}')
-EOF
-          echo "=== sys.version 详情 ==="
-          python << 'EOF'
-import sys; v = sys.version_info
-print(f'  Python {v.major}.{v.minor}.{v.micro} ({v.releaselevel})')
-print(f'  {sys.version}')
-EOF
-                  # Step 5：诊断 random 序列
+        run: python scripts/diagnose_random.py
+                  # Step 5：诊断 random 序列，排查跨 OS 不一致根因
 
       - name: 运行 pytest 测试套件
         run: python -m pytest tests/ -v -s --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
