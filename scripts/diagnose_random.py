@@ -53,3 +53,19 @@ d = {None: 1, 42: "answer", 3.14: b"pi"}
 print(f"  dict_mixed 迭代顺序 keys: {list(d.keys())}")
 h2 = hashlib.sha256(marshal.dumps(d)).hexdigest()
 print(f"  dict_mixed marshal hash: {h2}")
+
+# 直接跑 fuzzer 前 5 次迭代，看生成的对象和 marshal 哈希
+print()
+print("=== Fuzzer 前 5 次迭代 ===")
+import sys as _sys
+_sys.path.insert(0, "tests")
+from test_marshal import generate_fuzz_data, _compute_hash
+
+random.seed(42)
+for i in range(5):
+    obj = generate_fuzz_data(max_depth=6)
+    h = _compute_hash(obj)
+    t = type(obj).__name__
+    print(f"  iter {i}: type={t:>8s}  marshal_hash={h}")
+    if hasattr(obj, '__len__'):
+        print(f"           len={len(obj)}")
