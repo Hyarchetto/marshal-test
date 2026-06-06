@@ -124,7 +124,7 @@ def main():
     # ================================================================
     # 7. 最终结论
     # ================================================================
-    conclusion = _generate_conclusion(os_consistency, static_comparison, fuzzer_comparison)
+    conclusion = _generate_conclusion(os_consistency, static_comparison, fuzzer_comparison, summary)
 
     # ================================================================
     # 8. 拼装最终报告
@@ -452,7 +452,7 @@ def _collect_matrix_reports(all_matrix_reports):
     return {"total": len(collected), "reports": collected}
 
 
-def _generate_conclusion(os_consistency, static_comparison, fuzzer_comparison):
+def _generate_conclusion(os_consistency, static_comparison, fuzzer_comparison, summary):
     """生成最终结论"""
     consistent = os_consistency.get("overall_consistent", False)
     static_cases = static_comparison.get("total_cases", 0)
