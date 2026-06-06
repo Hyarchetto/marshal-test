@@ -88,6 +88,7 @@ def main():
             "timestamp": meta.get("timestamp", "?"),
             "current_version": py_ver,
             "baseline_version": meta.get("baseline_version", "?"),
+            "marshal_version": meta.get("marshal_version", "?"),
         })
         env_keys.append(f"{plat} Py{py_ver}")
 
@@ -472,7 +473,32 @@ def _generate_conclusion(os_consistency, static_comparison, fuzzer_comparison):
             "结论: 部分 Python 版本在不同操作系统上存在 marshal 输出差异。"
         )
 
+    # 跨版本分析：收集各版本的 marshal.version
+    version_info = {}
+    for env in summary.get("environments", []):
+        py_ver = env.get("current_version", "?")
+        mv = env.get("marshal_version", "?")
+        if py_ver not in version_info:
+            version_info[py_ver] = mv
+
+    conclusion_parts.append("")
+    conclusion_parts.append("--- 版本依赖性分析 ---")
+    for py_ver in sorted(version_info.keys(), key=lambda v: float(v)):
+        mv = version_info[py_ver]
+        conclusion_parts.append(f"  Python {py_ver:<5} → marshal.version = {mv}")
+
+    mv_set = set(version_info.values())
+    if len(mv_set) > 1:
+        conclusion_parts.append(
+            f"  → marshal.version 存在差异 ({', '.join(sorted(mv_set, key=str))})，证明格式随版本变化。"
+        )
+    else:
+        conclusion_parts.append(
+            "  → 本轮测试中各版本的 marshal.version 相同，基础类型编码未变。"
+        )
+
     # 跨版本分析
+    conclusion_parts.append("")
     conclusion_parts.append(
         f"跨版本分析: {static_cases} 个静态用例 + {fuzzer_iters} 轮模糊测试"
     )
@@ -506,7 +532,8 @@ def _write_summary_txt(txt_path, combined, conclusion):
         py_short = env.get("python_short", "?")
         plat = env.get("platform", "?")
         mach = env.get("machine", "?")
-        lines.append(f"  {py_short:<12} | {plat:<14} | {mach}")
+        mv = env.get("marshal_version", "?")
+        lines.append(f"  {py_short:<12} | {plat:<14} | {mach:<8} | marshal v{mv}")
     lines.append("")
 
     # 按组统计
@@ -521,11 +548,14 @@ def _write_summary_txt(txt_path, combined, conclusion):
         lines.append(f"      静态: 总计={data['total_static']}, "
                      f"通过={static.get('passed',0)}, "
                      f"失败={static.get('failed',0)}, "
-                     f"跨版本变化={static.get('changed',0)}, "
+                     f"兼容={static.get('unchanged',0)}, "
+                     f"变化={static.get('changed',0)}, "
                      f"不确定={static.get('uncertain',0)}")
         lines.append(f"      Fuzzer: 总计={data['total_fuzzer']}, "
                      f"通过={fuzzer.get('passed',0)}, "
-                     f"跨版本变化={fuzzer.get('changed',0)}")
+                     f"兼容={fuzzer.get('unchanged',0)}, "
+                     f"变化={fuzzer.get('changed',0)}, "
+                     f"不确定={fuzzer.get('uncertain',0)}")
     lines.append("")
 
     # ★★★ 核心分析：跨 OS 一致性 ★★★

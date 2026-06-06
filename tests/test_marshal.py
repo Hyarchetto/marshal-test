@@ -651,6 +651,7 @@ def test_marshal_stability_with_report():
             "timestamp": datetime.now().isoformat(),
             "baseline_version": BASELINE_VERSION,
             "current_version": current_version,
+            "marshal_version": marshal.version,
         },
         "static_results": results,
         "fuzzer_results": fuzzer_results,
