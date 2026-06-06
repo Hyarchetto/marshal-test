@@ -18,7 +18,7 @@ on:
 # ====================================================================
 env:
   PYTHONIOENCODING: utf-8   # 解决 Windows runner 打印中文时报错
-  PYTHONHASHSEED: 0         # 固定哈希种子，确保 set/dict 顺序跨进程一致
+  PYTHONHASHSEED: 1         # 固定哈希种子为具体数值，确保所有平台使用完全相同种子
 
 # ====================================================================
 # 【job 1】测试矩阵 — 3 系统 × 5 Python 版本 = 15 个并行任务
@@ -64,7 +64,7 @@ jobs:
       - name: 生成 JSON 结构化报告 (marshal 主报告)
         shell: bash
         env:
-          PYTHONHASHSEED: 0
+          PYTHONHASHSEED: 1
         run: |
           mkdir -p test-results
           python tests/test_marshal.py 2>&1 | tee test-results/marshal_report_py$(echo "${{ matrix.python-version }}" | tr -d '.').txt
@@ -74,7 +74,7 @@ jobs:
       - name: 生成 JSON 结构化报告 (矩阵环境验证)
         shell: bash
         env:
-          PYTHONHASHSEED: 0
+          PYTHONHASHSEED: 1
         run: |
           python tests/test_marshal_matrix.py 2>&1 | tee test-results/marshal_matrix_report_py$(echo "${{ matrix.python-version }}" | tr -d '.').txt
           mv marshal_matrix_report_py*.json test-results/
