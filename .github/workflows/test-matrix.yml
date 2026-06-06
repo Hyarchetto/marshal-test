@@ -54,12 +54,19 @@ jobs:
       - name: 显示环境信息
         run: |
           python --version
-          python -c "import sys,platform,os; print(sys.version); print(platform.system(), platform.release()); print('PYTHONHASHSEED=', os.environ.get('PYTHONHASHSEED','NOT SET'))"
-                  # Step 4：打印环境，方便排查
+          python -c "import sys,platform,os; print(sys.version); print(platform.system(), platform.release()); print('PYTHONHASHSEED=', os.environ.get('PYTHONHASHSEED','NOT SET')); print('hash(None)=', hash(None)); print('hash(None)&7=', hash(None)&7)"
+                  # Step 4：打印环境，方便排查。hash(None) 用于诊断 set 差异根因
 
       - name: 随机序列一致性诊断 (验证 random 是否跨 OS 一致)
-        run: python scripts/diagnose_random.py
+        run: |
+          mkdir -p test-results
+          python scripts/diagnose_random.py 2>&1 | tee test-results/diagnose_random_${{ matrix.os }}-py${{ matrix.python-version }}.txt
                   # Step 5：诊断 random 序列，排查跨 OS 不一致根因
+
+      - name: 逐层哈希诊断 (iter 6 & 8 — 精确定位 set/dict 差异来源)
+        run: |
+          python scripts/diagnose_iter8.py 2>&1 | tee test-results/diagnose_iter8_${{ matrix.os }}-py${{ matrix.python-version }}.txt
+                  # Step 5b：iter 8 拆解到每层 hash，精确定位 set/dict marshal 差异来源
 
       - name: 运行 pytest 测试套件
         run: python -m pytest tests/ -v -s --tb=short --junitxml=test-results/results-${{ matrix.os }}-py${{ matrix.python-version }}.xml

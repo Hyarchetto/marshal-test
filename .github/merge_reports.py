@@ -64,6 +64,17 @@ def main():
         merged_lines.append(content.rstrip())
         merged_lines.append("")
 
+    # ================================================================
+    # 收集诊断日志 (diagnose_random + diagnose_iter8)
+    # ================================================================
+    diag_random_files = glob.glob(
+        os.path.join(REPORT_DIR, "**", "diagnose_random_*.txt"), recursive=True,
+    )
+    diag_iter8_files = glob.glob(
+        os.path.join(REPORT_DIR, "**", "diagnose_iter8_*.txt"), recursive=True,
+    )
+    diag_info = _collect_diagnostics(diag_random_files, diag_iter8_files)
+
     # 写入合并日志
     if merged_lines:
         merged_path = os.path.join(OUTPUT_DIR, "combined_console_logs.txt")
@@ -141,6 +152,7 @@ def main():
             "fuzzer_cross_environment_comparison": fuzzer_comparison,
             "cross_os_consistency_by_python_version": os_consistency,
             "matrix_verification_results": matrix_reports_summary,
+            "diagnostic_summary": diag_info,
             "conclusion": conclusion,
             "console_logs": console_logs,
             "raw_environments": [
@@ -191,6 +203,59 @@ def _load_json_files(file_list, label=""):
         except (json.JSONDecodeError, OSError) as e:
             print(f"  警告: 无法加载 {label} 报告 {path}: {e}")
     return result
+
+
+def _collect_diagnostics(diag_random_files, diag_iter8_files):
+    """收集诊断脚本的输出，提取 hash(None) 跨平台对比"""
+    result = {
+        "hash_none_comparison": {},
+        "hash_none_consistent": False,
+        "diagnose_iter8": {},
+    }
+
+    # 从 diagnose_random 输出中提取 hash(None)
+    for fpath in sorted(diag_random_files):
+        tag = _extract_env_tag_from_diag_path(fpath)
+        try:
+            with open(fpath, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            # 提取 hash(None) 行
+            for line in content.splitlines():
+                if "hash(None)" in line:
+                    result["hash_none_comparison"][tag] = line.strip()
+                if "hash(None)" in line and "=" in line:
+                    pass
+        except OSError:
+            pass
+
+    # 从 diagnose_iter8 输出中提取分层 hash
+    for fpath in sorted(diag_iter8_files):
+        tag = _extract_env_tag_from_diag_path(fpath)
+        try:
+            with open(fpath, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            result["diagnose_iter8"][tag] = content[:2000]  # 保存前 2000 字符
+        except OSError:
+            pass
+
+    # 判断 hash(None) 是否跨平台一致
+    hash_vals = set(result["hash_none_comparison"].values())
+    result["hash_none_consistent"] = len(hash_vals) <= 1
+
+    return result
+
+
+def _extract_env_tag_from_diag_path(fpath):
+    """从 diagnose 文件名提取环境标签"""
+    basename = os.path.basename(fpath)
+    # 格式: diagnose_random_ubuntu-latest-py3.10.txt
+    # 或     diagnose_iter8_windows-latest-py3.9.txt
+    parts = basename.replace("diagnose_random_", "").replace("diagnose_iter8_", "").replace(".txt", "").split("-py")
+    if len(parts) == 2:
+        os_part = parts[0].replace("-latest", "").replace("-", " ").title()
+        py_part = f"Py{parts[1]}"
+        return f"{os_part} {py_part}"
+    return basename
 
 
 def _extract_env_tag_from_path(txt_path):
@@ -588,6 +653,18 @@ def _write_summary_txt(txt_path, combined, conclusion):
         f"  总体判定: {'✓ 全部一致 — marshal 序列化与操作系统无关' if overall_consistent else '✗ 存在差异'}"
     )
     lines.append("")
+
+    # 诊断摘要：hash(None) 跨平台对比
+    diag_info = combined_report.get("diagnostic_summary", {})
+    hc = diag_info.get("hash_none_comparison", {})
+    if hc:
+        lines.append("▌ 诊断：hash(None) 跨平台对比（基于 random.seed）")
+        lines.append(f"{'─'*68}")
+        for tag, val in sorted(hc.items()):
+            lines.append(f"  {tag:<20s} → {val}")
+        consistent = diag_info.get("hash_none_consistent", False)
+        lines.append(f"  结论: hash(None) 跨平台{'一致' if consistent else '不一致（不同进程地址不同）'}")
+        lines.append("")
 
     # 结论
     lines.append("▌ 最终结论")
