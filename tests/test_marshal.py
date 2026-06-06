@@ -446,8 +446,8 @@ def _evaluate_case(case_name, test_data, baseline_hash, current_version):
                             f"跨平台不一致: baseline={baseline_hash[:16]}..., current={current_hash[:16]}...")
         else:
             # 跨版本 -> 探测格式变化
-            # 注意: 非确定性类型（set/dict/NaN）在此仍参与比对，
-            # 因为 CI 中 PYTHONHASHSEED=0 使 set/dict 顺序确定
+            # 注意: 非确定性类型（set/dict/NaN）也参与比对，
+            # CI 中 PYTHONHASHSEED=1 固定为字面量种子，各平台一致
             if current_hash != baseline_hash:
                 return ("changed", current_hash, None)
             else:
@@ -495,16 +495,7 @@ def test_marshal_stability_with_report():
     for i in range(FUZZER_ITERATIONS):
         fuzz_obj = generate_fuzz_data(max_depth=6)
         baseline_hash = FUZZER_BASELINE_HASHES[i] if i < len(FUZZER_BASELINE_HASHES) else None
-
-        # 跨版本模式下，fuzzer 生成的非确定性对象跳过比对
-        # （不同 Python 补丁号的 random 序列可能不同，导致同一迭代生成不同对象）
-        if current_version != BASELINE_VERSION and _contains_non_deterministic(fuzz_obj):
-            status = "uncertain_skip"
-            cur_hash = None
-            err = None
-        else:
-            status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
-
+        status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
         fuzzer_results.append({
             "iteration": i,
             "status": status,
