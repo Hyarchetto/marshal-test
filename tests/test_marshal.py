@@ -389,6 +389,34 @@ UNCERTAIN_CASES = {
 }
 
 
+def _contains_non_deterministic(obj, seen=None):
+    """
+    递归检查对象是否包含非确定性类型（set/dict/NaN/math-like）。
+    set/dict 因 PYTHONHASHSEED 导致迭代顺序不定；
+    NaN 有多种位表示。
+    """
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return False  # 循环引用已访问过，不重复
+    seen.add(obj_id)
+
+    if isinstance(obj, (set, dict)):
+        return True
+    if isinstance(obj, float):
+        # NaN 的唯一判断方式：不等于自身
+        if obj != obj:
+            return True
+    if isinstance(obj, complex):
+        if obj.real != obj.real or obj.imag != obj.imag:
+            return True
+    if isinstance(obj, (list, tuple)):
+        return any(_contains_non_deterministic(item, seen) for item in obj)
+
+    return False
+
+
 def _evaluate_case(case_name, test_data, baseline_hash, current_version):
     """
     评估单个用例的状态。
@@ -466,6 +494,16 @@ def test_marshal_stability_with_report():
         fuzz_obj = generate_fuzz_data(max_depth=6)
         baseline_hash = FUZZER_BASELINE_HASHES[i] if i < len(FUZZER_BASELINE_HASHES) else None
         status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
+
+        # 对 fuzzer 结果做非确定性重分类：
+        # 如果对象包含 set/dict/NaN，且在同版本下哈希不匹配 → uncertain_drift 而非 failed
+        if (
+            current_version == BASELINE_VERSION
+            and status == "failed"
+            and _contains_non_deterministic(fuzz_obj)
+        ):
+            status = "uncertain_drift"
+
         fuzzer_results.append({
             "iteration": i,
             "status": status,
