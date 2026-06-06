@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 在 Python 3.12 环境运行此脚本，重新采集所有基准哈希值。
-要求: PYTHONHASHSEED=0 环境变量已设置
+要求: PYTHONHASHSEED=1 环境变量已设置
 
 用法:
-    set PYTHONHASHSEED=0 && python collect_baseline.py > new_baselines.txt
+    set PYTHONHASHSEED=1 && python collect_baseline.py > new_baselines.txt
 
 然后将输出的哈希表复制到 tests/test_marshal.py 对应位置。
 """
@@ -17,9 +17,9 @@ import platform
 
 # 确保 PYTHONHASHSEED 已固定
 import os
-if os.environ.get("PYTHONHASHSEED", "") != "0":
-    print("警告: PYTHONHASHSEED 未设置为 0，set/dict 哈希将不可重现！")
-    print("请设置环境变量 PYTHONHASHSEED=0 后重新运行\n", file=sys.stderr)
+if os.environ.get("PYTHONHASHSEED", "") != "1":
+    print("警告: PYTHONHASHSEED 未设置为 1，set/dict 哈希将不可重现！")
+    print("请设置环境变量 PYTHONHASHSEED=1 后重新运行\n", file=sys.stderr)
 
 expected_version = "3.12"
 current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
