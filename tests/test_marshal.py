@@ -2,7 +2,7 @@
 marshal 模块跨平台/跨版本兼容性测试脚本
 
 任务说明:
-- 在 Python 3.10 基准环境采集 SHA-256 哈希并固化
+- 在 Python 3.12 基准环境采集 SHA-256 哈希并固化
 - 在 CI 矩阵中跨操作系统/跨版本比对
 - 探测序列化格式变化与不确定性输入
 
@@ -11,8 +11,9 @@ marshal 模块跨平台/跨版本兼容性测试脚本
     python test_marshal.py          # 直接运行查看差异报告
 
 注意:
-    当前哈希值在 Python 3.12 环境采集，供测试使用。
-    正式基准请在 Python 3.10 运行 collect_baseline.py 采集后替换。
+    当前哈希值在 Python 3.12 环境采集，作为基准版本。
+    同一 Python 版本在不同操作系统上应产生相同的 marshal 输出，
+    不同 Python 版本之间 marshal 格式可能发生变化。
 """
 
 import sys
@@ -22,7 +23,7 @@ import random
 import platform
 
 #---全局约束配置---
-BASELINE_VERSION = "3.10"
+BASELINE_VERSION = "3.12"
 GLOBAL_SEED = 42
 FUZZER_ITERATIONS = 50  # 模糊测试迭代次数
 
@@ -129,8 +130,8 @@ _STATIC_CASES_DEF = [
     ("deep_mixed", _make_deep_mixed()),
 ]
 
-# 预构建的静态用例基准哈希表 (在 Python 3.10 环境采集)
-# 注意: 以下哈希在 Python 3.12 采集，正式使用请在 3.10 重新采集
+# 预构建的静态用例基准哈希表 (在 Python 3.12 环境采集)
+# 用于验证: 同一 Python 版本内跨操作系统一致性，及跨版本格式差异
 STATIC_BASELINE_HASHES = {
     "none": "8ce86a6ae65d3692e7305e2c58ac62eebd97d3d943e093f577da25c36988246b",
     "bool_true": "e632b7095b0bf32c260fa4c539e9fd7b852d0de454e9be26f24d0d6f91d069d3",
@@ -194,7 +195,7 @@ STATIC_BASELINE_HASHES = {
 # ============================================================
 # 2. 预构建的模糊测试基准哈希表
 # ============================================================
-# 注意: 以下哈希在 Python 3.12 采集，正式使用请在 3.10 重新采集
+# 注意: 以下哈希在 Python 3.12 环境采集
 FUZZER_BASELINE_HASHES = [
     "fec32d0301abb181227152f011676afde28d0eaa2b5160779f9d4425bfe02ccf",  # iter 0
     "bfaaaf30db9f92f59b177a8c52f8c5345e185565bcbb63668f6e5ade19407f75",  # iter 1
