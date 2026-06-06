@@ -446,15 +446,12 @@ def _evaluate_case(case_name, test_data, baseline_hash, current_version):
                             f"跨平台不一致: baseline={baseline_hash[:16]}..., current={current_hash[:16]}...")
         else:
             # 跨版本 -> 探测格式变化
-            if _contains_non_deterministic(test_data):
-                # 非确定性类型（set/dict/NaN）因 PYTHONHASHSEED 随机，
-                # 哈希是否匹配基线纯属运气，无法判断格式是否变化，跳过
-                return ("uncertain_skip", current_hash, None)
+            # 注意: 非确定性类型（set/dict/NaN）在此仍参与比对，
+            # 因为 CI 中 PYTHONHASHSEED=0 使 set/dict 顺序确定
+            if current_hash != baseline_hash:
+                return ("changed", current_hash, None)
             else:
-                if current_hash != baseline_hash:
-                    return ("changed", current_hash, None)
-                else:
-                    return ("unchanged", current_hash, None)
+                return ("unchanged", current_hash, None)
 
     except Exception as e:
         return ("error", None, f"{type(e).__name__}: {str(e)}")
