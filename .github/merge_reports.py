@@ -223,7 +223,7 @@ def _compute_summary(report):
         }
         for item in items:
             s = item.get("status", "")
-            if s in ("uncertain_drift", "uncertain_stable"):
+            if s in ("uncertain_drift", "uncertain_stable", "uncertain_skip"):
                 counts["uncertain"] += 1
             elif s in counts:
                 counts[s] += 1

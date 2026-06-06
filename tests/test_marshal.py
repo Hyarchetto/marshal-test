@@ -432,7 +432,7 @@ def _evaluate_case(case_name, test_data, baseline_hash, current_version):
 
         if current_version == BASELINE_VERSION:
             # 同版本 -> 验证跨平台一致性
-            if case_name in UNCERTAIN_CASES:
+            if case_name in UNCERTAIN_CASES or _contains_non_deterministic(test_data):
                 # 不确定性用例：记录漂移但不判定失败
                 if current_hash != baseline_hash:
                     return ("uncertain_drift", current_hash, None)
@@ -446,10 +446,15 @@ def _evaluate_case(case_name, test_data, baseline_hash, current_version):
                             f"跨平台不一致: baseline={baseline_hash[:16]}..., current={current_hash[:16]}...")
         else:
             # 跨版本 -> 探测格式变化
-            if current_hash != baseline_hash:
-                return ("changed", current_hash, None)
+            if _contains_non_deterministic(test_data):
+                # 非确定性类型（set/dict/NaN）因 PYTHONHASHSEED 随机，
+                # 哈希是否匹配基线纯属运气，无法判断格式是否变化，跳过
+                return ("uncertain_skip", current_hash, None)
             else:
-                return ("unchanged", current_hash, None)
+                if current_hash != baseline_hash:
+                    return ("changed", current_hash, None)
+                else:
+                    return ("unchanged", current_hash, None)
 
     except Exception as e:
         return ("error", None, f"{type(e).__name__}: {str(e)}")
@@ -494,16 +499,6 @@ def test_marshal_stability_with_report():
         fuzz_obj = generate_fuzz_data(max_depth=6)
         baseline_hash = FUZZER_BASELINE_HASHES[i] if i < len(FUZZER_BASELINE_HASHES) else None
         status, cur_hash, err = _evaluate_case(f"fuzzer_{i}", fuzz_obj, baseline_hash, current_version)
-
-        # 对 fuzzer 结果做非确定性重分类：
-        # 如果对象包含 set/dict/NaN，且在同版本下哈希不匹配 → uncertain_drift 而非 failed
-        if (
-            current_version == BASELINE_VERSION
-            and status == "failed"
-            and _contains_non_deterministic(fuzz_obj)
-        ):
-            status = "uncertain_drift"
-
         fuzzer_results.append({
             "iteration": i,
             "status": status,
@@ -535,7 +530,7 @@ def test_marshal_stability_with_report():
             category_stats[cat]["changed"] += 1
         elif r["status"] in ("unchanged",):
             category_stats[cat]["unchanged"] += 1
-        elif r["status"] in ("uncertain_drift", "uncertain_stable"):
+        elif r["status"] in ("uncertain_drift", "uncertain_stable", "uncertain_skip"):
             category_stats[cat]["uncertain"] += 1
         elif r["status"] in ("error",):
             category_stats[cat]["error"] += 1
@@ -565,7 +560,7 @@ def test_marshal_stability_with_report():
         for r in float_special:
             status_symbol = {
                 "passed": "✓", "failed": "✗", "changed": "Δ", "unchanged": "=",
-                "uncertain_drift": "~", "uncertain_stable": "≈", "error": "!"
+                "uncertain_drift": "~", "uncertain_stable": "≈", "uncertain_skip": "-", "error": "!"
             }.get(r["status"], "?")
             print(f"    {status_symbol} {r['name']:25s}  | 状态: {r['status']}")
     else:
@@ -608,12 +603,15 @@ def test_marshal_stability_with_report():
     if is_baseline:
         print(f"  同版本通过 (跨平台一致): {fuzzer_status_count.get('passed', 0)}")
         print(f"  同版本失败 (跨平台不一致): {fuzzer_status_count.get('failed', 0)}")
-        uncertain_cnt = fuzzer_status_count.get("uncertain_drift", 0) + fuzzer_status_count.get("uncertain_stable", 0)
+        uncertain_cnt = fuzzer_status_count.get("uncertain_drift", 0) + fuzzer_status_count.get("uncertain_stable", 0) + fuzzer_status_count.get("uncertain_skip", 0)
         if uncertain_cnt:
             print(f"  非确定性类型 (set/dict/NaN 跳过): {uncertain_cnt}")
     else:
         print(f"  跨版本格式变化: {fuzzer_status_count.get('changed', 0)}")
         print(f"  跨版本格式兼容: {fuzzer_status_count.get('unchanged', 0)}")
+        skip_cnt = fuzzer_status_count.get("uncertain_skip", 0) + fuzzer_status_count.get("uncertain_drift", 0) + fuzzer_status_count.get("uncertain_stable", 0)
+        if skip_cnt:
+            print(f"  非确定性类型 (跳过比对的): {skip_cnt}")
     print(f"  执行异常: {fuzzer_status_count.get('error', 0)}")
     # 分析4：跨版本格式兼容性
     if not is_baseline:
