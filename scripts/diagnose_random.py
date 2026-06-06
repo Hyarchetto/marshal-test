@@ -62,10 +62,40 @@ _sys.path.insert(0, "tests")
 from test_marshal import generate_fuzz_data, _compute_hash
 
 random.seed(42)
-for i in range(5):
+for i in range(10):
     obj = generate_fuzz_data(max_depth=6)
     h = _compute_hash(obj)
     t = type(obj).__name__
-    print(f"  iter {i}: type={t:>8s}  marshal_hash={h}")
-    if hasattr(obj, '__len__'):
+    non_det = " <-" if type(obj).__name__ in ('set','dict') or (type(obj).__name__ == 'float' and obj != obj) else ""
+    print(f"  iter {i:2d}: type={t:>8s}  marshal_hash={h}{non_det}")
+    if hasattr(obj, '__len__') and not isinstance(obj, (str, bytes)):
         print(f"           len={len(obj)}")
+    elif isinstance(obj, (str, bytes)):
+        el = repr(obj)[:60] if len(obj) > 5 else repr(obj)
+        print(f"           val={el}")
+
+# 验证 NaN 和特殊浮点数的跨平台编码
+print()
+print("=== 特殊浮点数跨平台编码验证 ===")
+special_floats = [float('nan'), float('inf'), float('-inf'), -0.0, 0.0]
+for f in special_floats:
+    h = _compute_hash(f)
+    print(f"  marshal({f!r:>8s}): {h}")
+
+# 验证 complex(NaN)
+nan = float('nan')
+special_complexes = [complex(nan, 0), complex(0, nan), complex(nan, nan)]
+for c in special_complexes:
+    h = _compute_hash(c)
+    print(f"  marshal({c!r}): {h}")
+
+# 验证含 NaN 的 list/tuple 编码
+print()
+print("=== 含 NaN 的容器编码验证 ===")
+nan_container = [1.0, float('nan'), 2.0]
+h = _compute_hash(nan_container)
+print(f"  list [1.0, nan, 2.0]: {h}")
+
+nan_tuple = (1.0, float('nan'), 2.0)
+h = _compute_hash(nan_tuple)
+print(f"  tuple (1.0, nan, 2.0): {h}")
