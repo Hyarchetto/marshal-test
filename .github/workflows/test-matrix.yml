@@ -8,9 +8,9 @@ name: 测试矩阵
 # ====================================================================
 on:
   push:                     # git push 推送代码时触发
-    branches: [ main, master ]
+    branches: [ master ]
   pull_request:             # 创建 Pull Request 时触发
-    branches: [ main, master ]
+    branches: [ master ]
   workflow_dispatch:        # 允许在 GitHub 网页上手动点按钮运行
 
 # ====================================================================
