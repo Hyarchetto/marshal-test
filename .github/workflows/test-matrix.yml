@@ -80,7 +80,8 @@ jobs:
           mkdir -p test-results
           python tests/test_marshal.py 2>&1 | tee test-results/marshal_report_py$(echo "${{ matrix.python-version }}" | tr -d '.').txt
           mv marshal_report_py*.json test-results/
-                  # Step 6：调用 test_marshal.py 输出 JSON + print 日志到 test-results/
+          if ls marshal_diff_py*.txt 1> /dev/null 2>&1; then mv marshal_diff_py*.txt test-results/; fi
+                  # Step 6：调用 test_marshal.py 输出 JSON + diff + print 日志到 test-results/
 
       - name: 生成 JSON 结构化报告 (矩阵环境验证)
         shell: bash

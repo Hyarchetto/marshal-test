@@ -75,6 +75,35 @@ def main():
     )
     diag_info = _collect_diagnostics(diag_random_files, diag_iter8_files)
 
+    # ================================================================
+    # 收集所有环境的哈希差异汇总文件并合并
+    # ================================================================
+    diff_files = glob.glob(
+        os.path.join(REPORT_DIR, "**", "marshal_diff_py*.txt"), recursive=True,
+    )
+    if diff_files:
+        combined_diff_lines = []
+        diff_file_count = 0
+        for diff_path in sorted(diff_files):
+            env_tag = _extract_env_tag_from_path(diff_path)
+            with open(diff_path, encoding="utf-8", errors="replace") as f:
+                content = f.read().strip()
+            combined_diff_lines.append(f"{'='*68}")
+            combined_diff_lines.append(f"  环境: {env_tag}")
+            combined_diff_lines.append(f"{'='*68}")
+            combined_diff_lines.append(content)
+            combined_diff_lines.append("")
+            # 统计该环境的差异条目数
+            diff_count = sum(1 for line in content.splitlines() if line.startswith("元素："))
+            diff_file_count += diff_count
+
+        combined_diff_path = os.path.join(OUTPUT_DIR, "combined_marshal_diff.txt")
+        with open(combined_diff_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(combined_diff_lines))
+        print(f"   合并哈希差异: {combined_diff_path} (共 {diff_file_count} 条差异，来自 {len(diff_files)} 个环境)")
+    else:
+        print("   无哈希差异文件需要合并")
+
     # 写入合并日志
     if merged_lines:
         merged_path = os.path.join(OUTPUT_DIR, "combined_console_logs.txt")
