@@ -381,6 +381,81 @@ def _compute_hash(obj):
     return hashlib.sha256(marshal.dumps(obj)).hexdigest()
 
 
+def _obj_to_display(obj, max_items=5, max_str_len=60):
+    """
+    将测试对象转为可读的显示字符串（用于差异报告中「元素」字段）。
+    大对象自动截断，递归对象安全处理。
+    """
+    seen = set()
+
+    def _fmt(o, depth=0):
+        oid = id(o)
+        if oid in seen:
+            return "<自引用>"
+        if depth > 4:
+            return "..."
+
+        try:
+            if o is None:
+                return "None"
+            if isinstance(o, bool):
+                return "True" if o else "False"
+            if isinstance(o, int):
+                return repr(o)
+            if isinstance(o, float):
+                return "nan" if o != o else repr(o)
+            if isinstance(o, complex):
+                return repr(o)
+            if isinstance(o, bytes):
+                s = repr(o)
+                return s[:max_str_len] + "...'" if len(s) > max_str_len else s
+            if isinstance(o, str):
+                s = repr(o)
+                return s[:max_str_len] + "...'" if len(s) > max_str_len else s
+            if isinstance(o, tuple):
+                seen.add(oid)
+                if len(o) == 0:
+                    return "()"
+                items = [_fmt(item, depth + 1) for item in o[:max_items]]
+                suffix = ", ..." if len(o) > max_items else ""
+                return "(" + ", ".join(items) + suffix + ")"
+            if isinstance(o, list):
+                seen.add(oid)
+                if len(o) == 0:
+                    return "[]"
+                items = [_fmt(item, depth + 1) for item in o[:max_items]]
+                suffix = ", ..." if len(o) > max_items else ""
+                return "[" + ", ".join(items) + suffix + "]"
+            if isinstance(o, set):
+                seen.add(oid)
+                if len(o) == 0:
+                    return "set()"
+                items = [_fmt(item, depth + 1) for item in list(o)[:max_items]]
+                suffix = ", ..." if len(o) > max_items else ""
+                return "{" + ", ".join(items) + suffix + "}"
+            if isinstance(o, dict):
+                seen.add(oid)
+                if len(o) == 0:
+                    return "{}"
+                items = []
+                for i, (k, v) in enumerate(o.items()):
+                    if i >= max_items:
+                        break
+                    items.append(f"{_fmt(k, depth + 1)}: {_fmt(v, depth + 1)}")
+                suffix = ", ..." if len(o) > max_items else ""
+                return "{" + ", ".join(items) + suffix + "}"
+            if isinstance(o, frozenset):
+                seen.add(oid)
+                items = [_fmt(item, depth + 1) for item in list(o)[:max_items]]
+                suffix = ", ..." if len(o) > max_items else ""
+                return "frozenset({" + ", ".join(items) + suffix + "})"
+        except Exception:
+            return "<不可显示>"
+        return repr(o)
+
+    return _fmt(obj)
+
+
 # 不确定性用例清单
 UNCERTAIN_CASES = {
     "float_nan", "complex_nan",
@@ -489,6 +564,7 @@ def test_marshal_stability_with_report():
             "type": type(obj).__name__,
             "baseline_hash": baseline_hash,
             "current_hash": cur_hash,
+            "display": _obj_to_display(obj),
             "error": err,
         })
 
@@ -504,6 +580,7 @@ def test_marshal_stability_with_report():
             "type": type(fuzz_obj).__name__,
             "baseline_hash": baseline_hash,
             "current_hash": cur_hash,
+            "display": _obj_to_display(fuzz_obj),
             "error": err,
         })
 
@@ -678,7 +755,7 @@ def test_marshal_stability_with_report():
         bh = r.get("baseline_hash")
         ch = r.get("current_hash")
         if bh is not None and ch is not None and bh != ch:
-            diff_lines.append(f"元素：{r['name']} ({r['type']})")
+            diff_lines.append(f"元素：{r['name']} = {r.get('display', r['name'])}")
             diff_lines.append(f"基准版本哈希值（{BASELINE_VERSION}）：{bh}")
             diff_lines.append(f"当前版本哈希值（{current_version}）：{ch}")
             diff_lines.append(f"状态：{r['status']}")
@@ -690,7 +767,7 @@ def test_marshal_stability_with_report():
         bh = r.get("baseline_hash")
         ch = r.get("current_hash")
         if bh is not None and ch is not None and bh != ch:
-            diff_lines.append(f"元素：fuzzer_iter_{r['iteration']} ({r['type']})")
+            diff_lines.append(f"元素：fuzzer_iter_{r['iteration']} = {r.get('display', r['type'])}")
             diff_lines.append(f"基准版本哈希值（{BASELINE_VERSION}）：{bh}")
             diff_lines.append(f"当前版本哈希值（{current_version}）：{ch}")
             diff_lines.append(f"状态：{r['status']}")
