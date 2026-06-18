@@ -487,6 +487,8 @@ def test_marshal_stability_with_report():
             "is_special_float": _is_special_float(name),
             "status": status,
             "type": type(obj).__name__,
+            "baseline_hash": baseline_hash,
+            "current_hash": cur_hash,
             "error": err,
         })
 
@@ -500,6 +502,8 @@ def test_marshal_stability_with_report():
             "iteration": i,
             "status": status,
             "type": type(fuzz_obj).__name__,
+            "baseline_hash": baseline_hash,
+            "current_hash": cur_hash,
             "error": err,
         })
 
@@ -657,6 +661,51 @@ def test_marshal_stability_with_report():
     with open(report_file, 'w', encoding='utf-8') as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"详细报告已保存: {report_file}")
+
+    # ----- 生成哈希差异汇总文件 -----
+    diff_lines = []
+    diff_lines.append(f"# marshal 哈希差异报告")
+    diff_lines.append(f"# {version_label}  |  {ref_label}")
+    diff_lines.append(f"# 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    diff_lines.append(f"{'='*68}")
+    diff_lines.append("")
+
+    # 收集所有有差异的项（同一版本下 hash 不同，或跨版本 hash 不同）
+    diff_count = 0
+
+    # 静态用例差异
+    for r in results:
+        bh = r.get("baseline_hash")
+        ch = r.get("current_hash")
+        if bh is not None and ch is not None and bh != ch:
+            diff_lines.append(f"元素：{r['name']} ({r['type']})")
+            diff_lines.append(f"基准版本哈希值（{BASELINE_VERSION}）：{bh}")
+            diff_lines.append(f"当前版本哈希值（{current_version}）：{ch}")
+            diff_lines.append(f"状态：{r['status']}")
+            diff_lines.append("")
+            diff_count += 1
+
+    # 模糊测试差异
+    for r in fuzzer_results:
+        bh = r.get("baseline_hash")
+        ch = r.get("current_hash")
+        if bh is not None and ch is not None and bh != ch:
+            diff_lines.append(f"元素：fuzzer_iter_{r['iteration']} ({r['type']})")
+            diff_lines.append(f"基准版本哈希值（{BASELINE_VERSION}）：{bh}")
+            diff_lines.append(f"当前版本哈希值（{current_version}）：{ch}")
+            diff_lines.append(f"状态：{r['status']}")
+            diff_lines.append("")
+            diff_count += 1
+
+    if diff_count > 0:
+        diff_header = f"共 {diff_count} 个元素的哈希值存在差异\n"
+        diff_lines.insert(4, diff_header)
+        diff_file = f"marshal_diff_py{current_version.replace('.', '')}.txt"
+        with open(diff_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(diff_lines))
+        print(f"哈希差异明细已保存: {diff_file} ({diff_count} 个差异)")
+    else:
+        print(f"所有哈希值与基准一致，无差异文件生成")
 
 
 def test_marshal_stability():
