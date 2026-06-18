@@ -381,19 +381,57 @@ def _compute_hash(obj):
     return hashlib.sha256(marshal.dumps(obj)).hexdigest()
 
 
-def _obj_to_display(obj, max_items=5, max_str_len=60):
+def _obj_to_display(obj, max_items=4, max_str_len=40, max_depth=2, max_total_len=200):
     """
     将测试对象转为可读的显示字符串（用于差异报告中「元素」字段）。
     大对象自动截断，递归对象安全处理。
+    如果最终结果超过 max_total_len，降级为简洁摘要格式。
     """
+
+    def _brief_type(o):
+        """返回类型的简洁摘要"""
+        if o is None:
+            return "None"
+        if isinstance(o, bool):
+            return "True" if o else "False"
+        if isinstance(o, int):
+            return repr(o)
+        if isinstance(o, float):
+            return "nan" if o != o else repr(o)
+        if isinstance(o, complex):
+            return repr(o)
+        if isinstance(o, bytes):
+            s = repr(o)
+            return s[:max_str_len] + "...'" if len(s) > max_str_len else s
+        if isinstance(o, str):
+            s = repr(o)
+            return s[:max_str_len] + "...'" if len(s) > max_str_len else s
+        if isinstance(o, tuple):
+            if len(o) == 0: return "()"
+            return f"tuple({len(o)})"
+        if isinstance(o, list):
+            if len(o) == 0: return "[]"
+            return f"list({len(o)})"
+        if isinstance(o, set):
+            if len(o) == 0: return "set()"
+            return f"set({len(o)})"
+        if isinstance(o, frozenset):
+            if len(o) == 0: return "frozenset()"
+            return f"frozenset({len(o)})"
+        if isinstance(o, dict):
+            if len(o) == 0: return "{}"
+            return f"dict({len(o)})"
+        return type(o).__name__
+
     seen = set()
+    MAX_DEPTH = max_depth
 
     def _fmt(o, depth=0):
         oid = id(o)
         if oid in seen:
             return "<自引用>"
-        if depth > 4:
-            return "..."
+        if depth > MAX_DEPTH:
+            return _brief_type(o)
 
         try:
             if o is None:
@@ -453,7 +491,11 @@ def _obj_to_display(obj, max_items=5, max_str_len=60):
             return "<不可显示>"
         return repr(o)
 
-    return _fmt(obj)
+    result = _fmt(obj)
+    # 如果结果太长，降级为简洁摘要
+    if len(result) > max_total_len:
+        result = _brief_type(obj)
+    return result
 
 
 # 不确定性用例清单
